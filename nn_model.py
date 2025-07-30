@@ -8,8 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torch.optim as optim
-from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
 
 
 class CRNN(nn.Module):
@@ -168,185 +167,186 @@ def decode_predictions(outputs, idx_to_char):
         predictions.append(''.join(decoded))
     return predictions
 
-train_df = pd.read_csv('data/written_name_train_v2.csv')
-test_df = pd.read_csv('data/written_name_test_v2.csv')
-val_df = pd.read_csv('data/written_name_validation_v2.csv')
-train_image_dir = 'data/train_v2/train/'
+if __name__ == "__main__":
+    train_df = pd.read_csv('data/written_name_train_v2.csv')
+    test_df = pd.read_csv('data/written_name_test_v2.csv')
+    val_df = pd.read_csv('data/written_name_validation_v2.csv')
+    train_image_dir = 'data/train_v2/train/'
 
-train_df_clean = clean_labels(train_df)
-test_df_clean = clean_labels(test_df)
-val_df_clean = clean_labels(val_df)
-all_train_chars = set(''.join(train_df_clean['IDENTITY'].dropna().tolist()))
-all_test_chars = set(''.join(test_df_clean['IDENTITY'].dropna().tolist()))
-all_val_chars = set(''.join(val_df_clean['IDENTITY'].dropna().tolist()))
-vocab_chars = sorted(list(all_train_chars | all_test_chars | all_val_chars))
+    train_df_clean = clean_labels(train_df)
+    test_df_clean = clean_labels(test_df)
+    val_df_clean = clean_labels(val_df)
+    all_train_chars = set(''.join(train_df_clean['IDENTITY'].dropna().tolist()))
+    all_test_chars = set(''.join(test_df_clean['IDENTITY'].dropna().tolist()))
+    all_val_chars = set(''.join(val_df_clean['IDENTITY'].dropna().tolist()))
+    vocab_chars = sorted(list(all_train_chars | all_test_chars | all_val_chars))
 
-# Adds a CTC blankspace for model requirements.
-vocab_chars = [' '] + vocab_chars
-# Creates an index for character id's and the inverse index
-char_to_idx = {char: idx for idx, char in enumerate(vocab_chars)}
-idx_to_char = {idx: char for char, idx in char_to_idx.items()}
+    # Adds a CTC blankspace for model requirements.
+    vocab_chars = [' '] + vocab_chars
+    # Creates an index for character id's and the inverse index
+    char_to_idx = {char: idx for idx, char in enumerate(vocab_chars)}
+    idx_to_char = {idx: char for char, idx in char_to_idx.items()}
 
-#
-IMG_HEIGHT = 50
-IMG_WIDTH = 284
-NUM_CLASSES = len(vocab_chars)
+    #
+    IMG_HEIGHT = 50
+    IMG_WIDTH = 284
+    NUM_CLASSES = len(vocab_chars)
 
-# Transform IMAGES to grayscale
-transform = transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),
-    transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
-    transforms.ToTensor(),                       
-    transforms.Normalize(mean=[0.5], std=[0.5])   
-])
+    # Transform IMAGES to grayscale
+    transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=1),
+        transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
+        transforms.ToTensor(),                       
+        transforms.Normalize(mean=[0.5], std=[0.5])   
+    ])
 
-# Calls model structure
-model = CRNN(
-    img_height=IMG_HEIGHT,
-    img_width=IMG_WIDTH,
-    num_classes=NUM_CLASSES,
-    hidden_size=256
-)
+    # Calls model structure
+    model = CRNN(
+        img_height=IMG_HEIGHT,
+        img_width=IMG_WIDTH,
+        num_classes=NUM_CLASSES,
+        hidden_size=256
+    )
 
-# Used to skip failing corrupt data in the data set.
-skip_start = 24800 * 16
-skip_end = 25500 * 16
-# Creates training dataset
-train_dataset = HandwritingDataset(
-    csv_file = train_df_clean,
-    img_dir = 'data/train_v2/train/',
-    char_to_idx = char_to_idx,
-    transform = transform,
-    skip_range = (skip_start, skip_end)
-)
+    # Used to skip failing corrupt data in the data set.
+    skip_start = 24800 * 16
+    skip_end = 25500 * 16
+    # Creates training dataset
+    train_dataset = HandwritingDataset(
+        csv_file = train_df_clean,
+        img_dir = 'data/train_v2/train/',
+        char_to_idx = char_to_idx,
+        transform = transform,
+        skip_range = (skip_start, skip_end)
+    )
 
-# Creates validation dataset
-val_dataset = HandwritingDataset(
-    csv_file = val_df_clean,
-    img_dir = 'data/validation_v2/validation',
-    char_to_idx = char_to_idx,
-    transform = transform
-)
+    # Creates validation dataset
+    val_dataset = HandwritingDataset(
+        csv_file = val_df_clean,
+        img_dir = 'data/validation_v2/validation',
+        char_to_idx = char_to_idx,
+        transform = transform
+    )
 
-# Creates training and validation data loaders as well as setting the batch_size
-batch_size = 16
-train_loader = DataLoader(
-    train_dataset,
-    batch_size = batch_size,
-    shuffle = True,
-    collate_fn = collate_fn,
-    num_workers = 0
-)
-val_loader = DataLoader(
-    val_dataset,
-    batch_size = batch_size,
-    shuffle = False,
-    collate_fn = collate_fn,
-    num_workers = 0
-)
+    # Creates training and validation data loaders as well as setting the batch_size
+    batch_size = 16
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size = batch_size,
+        shuffle = True,
+        collate_fn = collate_fn,
+        num_workers = 0
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size = batch_size,
+        shuffle = False,
+        collate_fn = collate_fn,
+        num_workers = 0
+    )
 
-# Sets u CTC loss
-ctc_loss = nn.CTCLoss(blank = 0, reduction = "mean", zero_infinity = True)
+    # Sets u CTC loss
+    ctc_loss = nn.CTCLoss(blank = 0, reduction = "mean", zero_infinity = True)
 
-# Assigning the utilizing device, as well as the optimizer / scheduler, and modifiable attributes (3 epochs, progress print ever 1000 batches, etc)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = model.to(device)
-optimizer = optim.Adam(model.parameters(), lr = 0.001)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience = 2, factor = 0.5)
-num_epochs = 3
-model.train()
-test_branches = 3
-print_every = 1000
+    # Assigning the utilizing device, as well as the optimizer / scheduler, and modifiable attributes (3 epochs, progress print ever 1000 batches, etc)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+    optimizer = optim.Adam(model.parameters(), lr = 0.001)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience = 2, factor = 0.5)
+    num_epochs = 3
+    model.train()
+    test_branches = 3
+    print_every = 1000
 
-# Training Setup
+    # Training Setup
 
-for batch_idx, (images, targets, input_lengths, target_lengths, texts) in enumerate(train_loader):
-    if batch_idx >= test_branches:
-        break
-    images = images.to(device)
-    targets = targets.to(device)
-    outputs = model(images)
-    log_probs = F.log_softmax(outputs, dim=2).transpose(0,1)
-    loss = ctc_loss(log_probs, targets, input_lengths, target_lengths)
-    print(f"Batch {batch_idx +1} loss: {loss.item():.4f}")
-print("Training setup test completed successfully")
-
-print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-print(f"Training batches per epoch: {len(train_loader)}")
-print(f"Validation batches: {len(val_loader)}")
-
-
-# Taking the training setup and implementing the model to actually train / validate it.
-
-train_losses = []
-val_losses = []
-
-print(f"Starting training for {num_epochs} epochs...")
-print(f"Training batches per epoch: {len(train_loader)}")
-print(f"Validation batches: {len(val_loader)}")
-
-for epoch in range(num_epochs):
-    print(f"\n{'='*50}")
-    print(f"Epoch {epoch + 1}/{num_epochs}")
-    print(f"{'='*50}")
-    
-    # Training
-    train_loss = train_epoch(model, train_loader, optimizer, ctc_loss, device)
-    train_losses.append(train_loss)
-    
-    # Validation
-    val_loss = validate(model, val_loader, ctc_loss, device)
-    val_losses.append(val_loss)
-    
-    # Learning rate scheduling
-    scheduler.step(val_loss)
-    current_lr = optimizer.param_groups[0]['lr']
-    
-    print(f"\nEpoch {epoch + 1} Results:")
-    print(f"  Train Loss: {train_loss:.4f}")
-    print(f"  Val Loss: {val_loss:.4f}")
-    print(f"  Learning Rate: {current_lr:.6f}")
-    
-    # Show sample predictions
-    print("Sample of Predictions:")
-    model.eval()
-    with torch.no_grad():
-        sample_batch = next(iter(val_loader))
-        images, targets, input_lengths, target_lengths, true_texts = sample_batch
+    for batch_idx, (images, targets, input_lengths, target_lengths, texts) in enumerate(train_loader):
+        if batch_idx >= test_branches:
+            break
         images = images.to(device)
-        
+        targets = targets.to(device)
         outputs = model(images)
-        predictions = decode_predictions(outputs[:5], idx_to_char)
+        log_probs = F.log_softmax(outputs, dim=2).transpose(0,1)
+        loss = ctc_loss(log_probs, targets, input_lengths, target_lengths)
+        print(f"Batch {batch_idx +1} loss: {loss.item():.4f}")
+    print("Training setup test completed successfully")
+
+    print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"Training batches per epoch: {len(train_loader)}")
+    print(f"Validation batches: {len(val_loader)}")
+
+
+    # Taking the training setup and implementing the model to actually train / validate it.
+
+    train_losses = []
+    val_losses = []
+
+    print(f"Starting training for {num_epochs} epochs...")
+    print(f"Training batches per epoch: {len(train_loader)}")
+    print(f"Validation batches: {len(val_loader)}")
+
+    for epoch in range(num_epochs):
+        print(f"\n{'='*50}")
+        print(f"Epoch {epoch + 1}/{num_epochs}")
+        print(f"{'='*50}")
+    
+        # Training
+        train_loss = train_epoch(model, train_loader, optimizer, ctc_loss, device)
+        train_losses.append(train_loss)
+    
+        # Validation
+        val_loss = validate(model, val_loader, ctc_loss, device)
+        val_losses.append(val_loss)
+    
+        # Learning rate scheduling
+        scheduler.step(val_loss)
+        current_lr = optimizer.param_groups[0]['lr']
+    
+        print(f"\nEpoch {epoch + 1} Results:")
+        print(f"  Train Loss: {train_loss:.4f}")
+        print(f"  Val Loss: {val_loss:.4f}")
+        print(f"  Learning Rate: {current_lr:.6f}")
+    
+        # Show sample predictions
+        print("Sample of Predictions:")
+        model.eval()
+        with torch.no_grad():
+            sample_batch = next(iter(val_loader))
+            images, targets, input_lengths, target_lengths, true_texts = sample_batch
+            images = images.to(device)
         
-        for i, (pred, true) in enumerate(zip(predictions, true_texts[:5])):
-            accuracy = "O" if pred == true else "X"
-            print(f"  {i+1}. {accuracy} Predicted: '{pred}' | Actual: '{true}'")
+            outputs = model(images)
+            predictions = decode_predictions(outputs[:5], idx_to_char)
+        
+            for i, (pred, true) in enumerate(zip(predictions, true_texts[:5])):
+                accuracy = "O" if pred == true else "X"
+                print(f"  {i+1}. {accuracy} Predicted: '{pred}' | Actual: '{true}'")
     
-    # Save checkpoint after each epoch
-    checkpoint = {
-        'epoch': epoch + 1,
-        'model_state_dict': model.state_dict(),
+        # Save checkpoint after each epoch
+        checkpoint = {
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
 
-        'optimizer_state_dict': optimizer.state_dict(),
-        'scheduler_state_dict': scheduler.state_dict(),
-        'train_losses': train_losses,
-        'val_losses': val_losses,
-        'char_to_idx': char_to_idx,
-        'idx_to_char': idx_to_char,
-        'vocab_chars': vocab_chars,
-        'config': {
-            'IMG_HEIGHT': IMG_HEIGHT,
-            'IMG_WIDTH': IMG_WIDTH,
-            'NUM_CLASSES': NUM_CLASSES,
-            'hidden_size': 256
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'train_losses': train_losses,
+            'val_losses': val_losses,
+            'char_to_idx': char_to_idx,
+            'idx_to_char': idx_to_char,
+            'vocab_chars': vocab_chars,
+            'config': {
+                'IMG_HEIGHT': IMG_HEIGHT,
+                'IMG_WIDTH': IMG_WIDTH,
+                'NUM_CLASSES': NUM_CLASSES,
+                'hidden_size': 256
+            }
         }
-    }
     
-    torch.save(checkpoint, f'crnn_epoch_{epoch + 1}.pth')
-    print(f"Checkpoint saved: crnn_epoch_{epoch + 1}.pth")
+        torch.save(checkpoint, f'crnn_epoch_{epoch + 1}.pth')
+        print(f"Checkpoint saved: crnn_epoch_{epoch + 1}.pth")
 
-print("\nTraining completed!")
+    print("\nTraining completed!")
 
-# Save final model
-torch.save(checkpoint, 'crnn_model_final.pth')
-print("Final model saved as: crnn_model_final.pth")
+    # Save final model
+    torch.save(checkpoint, 'crnn_model_final.pth')
+    print("Final model saved as: crnn_model_final.pth")
